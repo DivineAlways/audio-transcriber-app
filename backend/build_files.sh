@@ -5,30 +5,49 @@ set -e # Exit immediately if a command exits with a non-zero status.
 
 echo "Installing ffmpeg static build into the function bundle"
 
-# Create a bin directory in the root of the build environment
-# This directory will be included in the serverless function package.
+# --- Configuration ---
+# Directory to place the final binaries
 BIN_DIR="bin"
 mkdir -p "$BIN_DIR"
 
-FFMPEG_ARCHIVE="/tmp/ffmpeg.tar.xz"
+# Temporary directories for download and extraction
+TMP_DIR="/tmp"
+FFMPEG_ARCHIVE="$TMP_DIR/ffmpeg.tar.xz"
+EXTRACT_DIR="$TMP_DIR/ffmpeg_extracted"
+mkdir -p "$EXTRACT_DIR"
 
 # Use a stable URL for the latest release
 FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
 
+# --- Execution ---
 echo "Downloading ffmpeg from $FFMPEG_URL..."
-# Download the file first, then extract
 curl -L -o "$FFMPEG_ARCHIVE" "$FFMPEG_URL"
 
-echo "Download complete. Extracting archive into $BIN_DIR..."
-# Extract the archive, but only pull out the ffmpeg and ffprobe binaries
-tar -xJf "$FFMPEG_ARCHIVE" --strip-components=1 -C "$BIN_DIR" ffmpeg-release-amd64-static/ffmpeg ffmpeg-release-amd64-static/ffprobe
+echo "Download complete. Extracting full archive to temporary directory..."
+tar -xJf "$FFMPEG_ARCHIVE" -C "$EXTRACT_DIR" --strip-components=1
 
-# Make ffmpeg and ffprobe executable
+echo "Searching for ffmpeg and ffprobe binaries..."
+FFMPEG_BIN=$(find "$EXTRACT_DIR" -type f -name "ffmpeg")
+FFPROBE_BIN=$(find "$EXTRACT_DIR" -type f -name "ffprobe")
+
+if [ -z "$FFMPEG_BIN" ] || [ -z "$FFPROBE_BIN" ]; then
+    echo "Error: Could not find ffmpeg or ffprobe binaries in the extracted archive."
+    exit 1
+fi
+
+echo "Found binaries. Moving them to $BIN_DIR"
+mv "$FFMPEG_BIN" "$BIN_DIR/"
+mv "$FFPROBE_BIN" "$BIN_DIR/"
+
+# Make the binaries executable
 chmod +x "$BIN_DIR/ffmpeg"
 chmod +x "$BIN_DIR/ffprobe"
 
 echo "ffmpeg and ffprobe are now in the $BIN_DIR directory."
-# Clean up the downloaded archive
-rm "$FFMPEG_ARCHIVE"
 
-echo "Build script finished."
+# --- Cleanup ---
+echo "Cleaning up temporary files..."
+rm "$FFMPEG_ARCHIVE"
+rm -rf "$EXTRACT_DIR"
+
+echo "Build script finished successfully."
