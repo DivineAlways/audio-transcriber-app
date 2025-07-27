@@ -13,7 +13,10 @@ document.getElementById('transcribeBtn').addEventListener('click', async () => {
     transcriptionDiv.textContent = 'Transcribing...';
 
     try {
-        const response = await fetch('http://localhost:8000/transcribe/', {
+        // IMPORTANT: Replace with your deployed Vercel backend URL
+        const backendUrl = 'https://lamont-audio-upload.vercel.app/transcribe/';
+        
+        const response = await fetch(backendUrl, {
             method: 'POST',
             body: formData,
         });
@@ -29,3 +32,7 @@ document.getElementById('transcribeBtn').addEventListener('click', async () => {
         transcriptionDiv.textContent = `Error: ${error.message}`;
     }
 });
+
+
+
+
