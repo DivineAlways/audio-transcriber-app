@@ -203,7 +203,7 @@ async def transcribe_chunks(session_id: str, original_filename: str):
             
         print(f"=== TRANSCRIBE CHUNKS END ===")
 
-def chunk_audio_simple(input_path: str, max_size_mb: int = 10) -> list:
+def chunk_audio_simple(input_path: str, max_size_mb: int = 3) -> list:
     """
     Split audio file into smaller chunks based on file size for Google API.
     This approach doesn't require ffmpeg - just splits the raw audio data.
@@ -264,9 +264,10 @@ def process_audio_with_google_directly(file_path: str) -> str:
         file_size_mb = len(content) / (1024 * 1024)
         print(f"File size: {file_size_mb:.2f} MB")
         
-        # For files larger than 10MB or if we know it's likely > 1 minute, use chunking approach
-        if file_size_mb > 10:
-            print("Large file detected, using chunking approach...")
+        # Be very conservative - if file is larger than 5MB, use chunking approach
+        # This helps avoid the "Sync input too long" error since we can't easily determine actual duration
+        if file_size_mb > 5:
+            print("File size > 5MB, using chunking approach to avoid sync limits...")
             return process_large_audio_file(file_path, file_extension)
         
         # Try different configurations based on file type
@@ -395,13 +396,13 @@ def process_large_audio_file(file_path: str, file_extension: str) -> str:
     try:
         print("Processing large audio file with chunking...")
         
-        # Split the file into smaller chunks (by file size, not time)
-        chunks = chunk_audio_simple(file_path, max_size_mb=8)  # Smaller chunks for better reliability
+        # Split the file into very small chunks to ensure they're under 1 minute
+        chunks = chunk_audio_simple(file_path, max_size_mb=3)  # Very small chunks for safety
         all_transcripts = []
         
         client = speech.SpeechClient()
         
-        # Determine best config for this file type
+        # Determine best config for this file type - use simpler configs for reliability
         if file_extension in ['.mp3']:
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.MP3,
@@ -411,39 +412,58 @@ def process_large_audio_file(file_path: str, file_extension: str) -> str:
         elif file_extension in ['.wav']:
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=16000,
                 language_code="en-US",
                 enable_automatic_punctuation=True,
             )
         else:
-            # Default to MP3 for video files and others
+            # Default to MP3 for video files and others - don't specify sample rate
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.MP3,
                 language_code="en-US",
                 enable_automatic_punctuation=True,
             )
         
+        successful_chunks = 0
+        
         for i, chunk_path in enumerate(chunks):
             try:
                 print(f"Processing chunk {i+1}/{len(chunks)}...")
+                
+                # Check chunk size before processing
+                chunk_size_mb = os.path.getsize(chunk_path) / (1024 * 1024)
+                print(f"Chunk {i+1} size: {chunk_size_mb:.2f} MB")
+                
                 with io.open(chunk_path, "rb") as chunk_file:
                     chunk_content = chunk_file.read()
                 
                 chunk_audio = speech.RecognitionAudio(content=chunk_content)
                 response = client.recognize(config=config, audio=chunk_audio)
                 
+                chunk_transcripts = []
                 for result in response.results:
                     if result.alternatives:
                         transcript_text = result.alternatives[0].transcript
                         print(f"Chunk {i+1} transcript: {transcript_text}")
-                        all_transcripts.append(transcript_text)
+                        chunk_transcripts.append(transcript_text)
+                
+                if chunk_transcripts:
+                    all_transcripts.extend(chunk_transcripts)
+                    successful_chunks += 1
+                else:
+                    print(f"Chunk {i+1}: No speech detected")
                 
                 # Clean up chunk file
                 os.remove(chunk_path)
                 
             except Exception as chunk_error:
-                print(f"Error processing chunk {i+1}: {chunk_error}")
-                # Continue with other chunks
+                error_msg = str(chunk_error)
+                print(f"Error processing chunk {i+1}: {error_msg}")
+                
+                # If this chunk is still too long, we have a problem
+                if "Sync input too long" in error_msg:
+                    print(f"Chunk {i+1} is still too long! Skipping...")
+                
+                # Clean up and continue with other chunks
                 try:
                     os.remove(chunk_path)
                 except:
@@ -451,7 +471,11 @@ def process_large_audio_file(file_path: str, file_extension: str) -> str:
                 continue
         
         final_transcript = " ".join(all_transcripts)
-        print(f"Combined transcript from {len(chunks)} chunks: {len(final_transcript)} characters")
+        print(f"Combined transcript from {successful_chunks}/{len(chunks)} successful chunks: {len(final_transcript)} characters")
+        
+        if successful_chunks == 0:
+            return ""  # No chunks were successfully processed
+        
         return final_transcript
         
     except Exception as e:
