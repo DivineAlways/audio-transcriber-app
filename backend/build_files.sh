@@ -45,22 +45,12 @@ echo "ffmpeg and ffprobe are now in the project root directory."
 
 # --- Cleanup ---
 echo "Cleaning up temporary files..."
-rm "$FFMPEG_ARCHIVE"
-rm -rf "$EXTRACT_DIR"
-
-# Create a dummy output directory to satisfy the Vercel static builder
-echo "Creating dummy output directory for Vercel..."
-mkdir -p public
-touch public/placeholder.txt
-
-echo "Build script finished successfully."
-
-echo "ffmpeg and ffprobe are now in the $BIN_DIR directory."
-
-# --- Cleanup ---
-echo "Cleaning up temporary files..."
-rm "$FFMPEG_ARCHIVE"
-rm -rf "$EXTRACT_DIR"
+if [ -f "$FFMPEG_ARCHIVE" ]; then
+    rm "$FFMPEG_ARCHIVE"
+fi
+if [ -d "$EXTRACT_DIR" ]; then
+    rm -rf "$EXTRACT_DIR"
+fi
 
 # Create a dummy output directory to satisfy the Vercel static builder
 echo "Creating dummy output directory for Vercel..."
