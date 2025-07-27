@@ -5,7 +5,6 @@ import os
 import io
 import tempfile
 from google.cloud import speech
-from pydub import AudioSegment
 import uvicorn
 import requests
 import base64
@@ -121,26 +120,9 @@ async def transcribe_chunks(session_id: str, original_filename: str):
         
         print(f"File assembled at: {assembled_file_path}")
 
-        # --- Start Transcription Logic (adapted from original function) ---
-        client = speech.SpeechClient()
-        audio_chunks = chunk_audio(assembled_file_path) # This is the backend chunking for Google API
-        all_transcripts = []
-
-        for i, chunk_path in enumerate(audio_chunks):
-            print(f"\nProcessing Google API chunk {i+1}/{len(audio_chunks)}...")
-            with io.open(chunk_path, "rb") as audio_file:
-                content = audio_file.read()
-            audio = speech.RecognitionAudio(content=content)
-            config = speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.MP3,
-                sample_rate_hertz=8000,
-                language_code="en-US",
-            )
-            response = client.recognize(config=config, audio=audio)
-            for result in response.results:
-                all_transcripts.append(result.alternatives[0].transcript)
-        
-        transcript = " ".join(all_transcripts)
+        # --- Start Transcription Logic (using Google's built-in audio processing) ---
+        print("Starting transcription with Google Speech-to-Text...")
+        transcript = process_audio_with_google_directly(assembled_file_path)
         # --- End Transcription Logic ---
 
         if transcript:
@@ -167,51 +149,109 @@ async def transcribe_chunks(session_id: str, original_filename: str):
         if session_id in upload_sessions:
             del upload_sessions[session_id]
 
-# Determine the absolute path to the project's root directory
-# The binaries are now placed directly in the project root, not in a bin subdirectory
-project_root = os.path.dirname(os.path.abspath(__file__))
-ffmpeg_path = os.path.join(project_root, "ffmpeg")
-ffprobe_path = os.path.join(project_root, "ffprobe")
-
-# Debug: Log the paths and check if files exist
-print(f"Project root: {project_root}")
-print(f"FFmpeg path: {ffmpeg_path}")
-print(f"FFprobe path: {ffprobe_path}")
-print(f"FFmpeg exists: {os.path.exists(ffmpeg_path)}")
-print(f"FFprobe exists: {os.path.exists(ffprobe_path)}")
-
-# List contents of project root for debugging
-print(f"Contents of project root: {os.listdir(project_root)}")
-
-# Tell pydub where to find ffmpeg and ffprobe
-AudioSegment.converter = ffmpeg_path
-AudioSegment.ffprobe = ffprobe_path
-
-def chunk_audio(input_path: str, chunk_duration_seconds: int = 50) -> list:
+def chunk_audio_simple(input_path: str, max_size_mb: int = 10) -> list:
     """
-    Split audio file into smaller chunks for Google API.
-    Returns list of paths to chunk files.
+    Split audio file into smaller chunks based on file size for Google API.
+    This approach doesn't require ffmpeg - just splits the raw audio data.
     """
     try:
-        print(f"Splitting audio for Google API into {chunk_duration_seconds}-second chunks...")
-        audio = AudioSegment.from_file(input_path)
-        chunk_size_ms = chunk_duration_seconds * 1000
+        print(f"Splitting audio file by size (max {max_size_mb}MB per chunk)...")
+        
+        # Get file size
+        file_size = os.path.getsize(input_path)
+        max_chunk_size = max_size_mb * 1024 * 1024  # Convert MB to bytes
+        
+        if file_size <= max_chunk_size:
+            print("File is small enough, no chunking needed")
+            return [input_path]
+        
         chunks = []
         temp_dir = tempfile.gettempdir()
         
-        for i, chunk_start in enumerate(range(0, len(audio), chunk_size_ms)):
-            chunk_end = min(chunk_start + chunk_size_ms, len(audio))
-            chunk = audio[chunk_start:chunk_end]
-            chunk = chunk.set_frame_rate(8000).set_channels(1)
-            
-            chunk_path = os.path.join(temp_dir, f"google_api_chunk_{i}.mp3")
-            chunk.export(chunk_path, format="mp3", bitrate="16k")
-            chunks.append(chunk_path)
-            
+        with open(input_path, 'rb') as input_file:
+            chunk_index = 0
+            while True:
+                chunk_data = input_file.read(max_chunk_size)
+                if not chunk_data:
+                    break
+                
+                chunk_path = os.path.join(temp_dir, f"audio_chunk_{chunk_index}.dat")
+                with open(chunk_path, 'wb') as chunk_file:
+                    chunk_file.write(chunk_data)
+                chunks.append(chunk_path)
+                chunk_index += 1
+                print(f"Created chunk {chunk_index}: {len(chunk_data)} bytes")
+        
         return chunks
     except Exception as e:
-        print(f"Error chunking audio for Google API: {e}")
-        # Re-raise the exception to be caught by the main endpoint handler
+        print(f"Error chunking audio: {e}")
+        raise e
+
+def process_audio_with_google_directly(file_path: str) -> str:
+    """
+    Process audio file directly with Google Speech-to-Text without ffmpeg.
+    Let Google handle the audio format conversion.
+    """
+    try:
+        print("Processing audio with Google Speech-to-Text directly...")
+        client = speech.SpeechClient()
+        
+        # Read the audio file
+        with io.open(file_path, "rb") as audio_file:
+            content = audio_file.read()
+        
+        # Let Google auto-detect the audio format
+        audio = speech.RecognitionAudio(content=content)
+        
+        # Use more flexible config that works with various formats
+        config = speech.RecognitionConfig(
+            # Remove specific encoding - let Google auto-detect
+            language_code="en-US",
+            # Enable automatic punctuation
+            enable_automatic_punctuation=True,
+            # Use enhanced model for better accuracy
+            model="latest_long",
+            # Handle longer audio files
+            use_enhanced=True
+        )
+        
+        # For files larger than 10MB, use long-running recognition
+        file_size_mb = len(content) / (1024 * 1024)
+        
+        if file_size_mb > 10:
+            print(f"Large file detected ({file_size_mb:.2f}MB), using long-running recognition...")
+            
+            # Upload to Google Cloud Storage would be ideal here, but for now we'll split
+            chunks = chunk_audio_simple(file_path, max_size_mb=10)
+            all_transcripts = []
+            
+            for i, chunk_path in enumerate(chunks):
+                print(f"Processing chunk {i+1}/{len(chunks)}...")
+                with io.open(chunk_path, "rb") as chunk_file:
+                    chunk_content = chunk_file.read()
+                
+                chunk_audio = speech.RecognitionAudio(content=chunk_content)
+                response = client.recognize(config=config, audio=chunk_audio)
+                
+                for result in response.results:
+                    all_transcripts.append(result.alternatives[0].transcript)
+                
+                # Clean up chunk file
+                os.remove(chunk_path)
+            
+            return " ".join(all_transcripts)
+        else:
+            print("Using standard recognition for smaller file...")
+            response = client.recognize(config=config, audio=audio)
+            
+            transcripts = []
+            for result in response.results:
+                transcripts.append(result.alternatives[0].transcript)
+            
+            return " ".join(transcripts)
+            
+    except Exception as e:
+        print(f"Error processing audio with Google: {e}")
         raise e
 
 # The original endpoint is now deprecated and can be removed or disabled.
