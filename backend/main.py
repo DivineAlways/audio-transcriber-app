@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, APIRouter
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -31,10 +31,19 @@ if os.getenv('GOOGLE_CREDENTIALS_BASE64'):
 
 
 app = FastAPI()
+router = APIRouter()
 
 # --- CORS Configuration ---
-# ... (rest of the CORS configuration)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
+# --- n8n Webhook Configuration ---
+N8N_WEBHOOK_URL = "https://innergcomplete.app.n8n.cloud/webhook/c0b2e4e8-c7b1-41c1-8e6e-db02f612b80d"
 
 
 def chunk_audio(input_path: str, chunk_duration_minutes: int = 3) -> list:
@@ -66,7 +75,7 @@ def chunk_audio(input_path: str, chunk_duration_minutes: int = 3) -> list:
         print(f"Error chunking audio: {e}")
         return [input_path]
 
-@app.post("/transcribe/")
+@router.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
     """
     Transcribes an audio file using Google Speech-to-Text.
@@ -140,6 +149,8 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+app.include_router(router)
 
 if __name__ == "__main__":
     if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):

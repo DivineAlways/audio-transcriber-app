@@ -1,4 +1,10 @@
-document.getElementById('transcribeBtn').addEventListener('click', async () => {
+document.getEle        // IMPORTANT: Replace with your deployed Vercel backend URL
+        const backendUrl = 'https://audio-transcriber-app-backend.vercel.app/transcribe';
+        
+        const response = await fetch(backendUrl, {
+            method: 'POST',
+            body: formData,
+        });d('transcribeBtn').addEventListener('click', async () => {
     const audioFile = document.getElementById('audioFile').files[0];
     const transcriptionDiv = document.getElementById('transcription');
 
