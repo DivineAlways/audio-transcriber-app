@@ -80,20 +80,29 @@ async def transcribe_audio(file: UploadFile = File(...)):
     """
     Transcribes an audio file using Google Speech-to-Text.
     """
+    # Vercel's serverless environment is stateless, and only the /tmp directory is writable.
+    temp_dir = "/tmp"
+    temp_audio_path = os.path.join(temp_dir, file.filename)
+
     try:
-        # Save the uploaded file to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_audio_file:
-            temp_audio_file.write(await file.read())
-            temp_audio_path = temp_audio_file.name
+        # Save the uploaded file to the /tmp directory
+        with open(temp_audio_path, "wb") as buffer:
+            buffer.write(await file.read())
+        
+        print(f"Temporary file created at: {temp_audio_path}")
+        print(f"Does the file exist? {os.path.exists(temp_audio_path)}")
+        print(f"File size: {os.path.getsize(temp_audio_path)} bytes")
 
         client = speech.SpeechClient()
         
+        # Pass the correct path to the chunking function
         audio_chunks = chunk_audio(temp_audio_path)
         
         all_transcripts = []
         
         for i, chunk_path in enumerate(audio_chunks):
-            print(f"\nProcessing chunk {i+1}/{len(audio_chunks)}...")
+            print(f"\nProcessing chunk {i+1}/{len(audio_chunks)} at {chunk_path}...")
+            print(f"Does chunk exist? {os.path.exists(chunk_path)}")
             
             with io.open(chunk_path, "rb") as audio_file:
                 content = audio_file.read()
@@ -120,14 +129,18 @@ async def transcribe_audio(file: UploadFile = File(...)):
         
         transcript = " ".join(all_transcripts)
         
+        # Clean up all temporary files
         for chunk_path in audio_chunks:
             try:
-                os.remove(chunk_path)
-                print(f"Cleaned up chunk: {os.path.basename(chunk_path)}")
-            except:
-                pass
+                if os.path.exists(chunk_path):
+                    os.remove(chunk_path)
+                    print(f"Cleaned up chunk: {os.path.basename(chunk_path)}")
+            except Exception as e:
+                print(f"Error cleaning up chunk {chunk_path}: {e}")
         
-        os.remove(temp_audio_path)
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+            print(f"Cleaned up original temp file: {temp_audio_path}")
 
         if transcript:
             # Send transcript to n8n webhook
@@ -148,6 +161,10 @@ async def transcribe_audio(file: UploadFile = File(...)):
             return JSONResponse(content={"message": "No transcription found for the audio file."}, status_code=404)
 
     except Exception as e:
+        print(f"An error occurred: {e}")
+        # Clean up in case of error
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 app.include_router(router)
