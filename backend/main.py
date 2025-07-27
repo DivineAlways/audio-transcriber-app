@@ -168,10 +168,10 @@ async def transcribe_chunks(session_id: str, original_filename: str):
             del upload_sessions[session_id]
 
 # Determine the absolute path to the project's root directory
-# This is necessary for locating the 'bin' directory in the Vercel environment
+# The binaries are now placed directly in the project root, not in a bin subdirectory
 project_root = os.path.dirname(os.path.abspath(__file__))
-ffmpeg_path = os.path.join(project_root, "bin/ffmpeg")
-ffprobe_path = os.path.join(project_root, "bin/ffprobe")
+ffmpeg_path = os.path.join(project_root, "ffmpeg")
+ffprobe_path = os.path.join(project_root, "ffprobe")
 
 # Debug: Log the paths and check if files exist
 print(f"Project root: {project_root}")
@@ -180,13 +180,8 @@ print(f"FFprobe path: {ffprobe_path}")
 print(f"FFmpeg exists: {os.path.exists(ffmpeg_path)}")
 print(f"FFprobe exists: {os.path.exists(ffprobe_path)}")
 
-# List contents of project root and bin directory for debugging
+# List contents of project root for debugging
 print(f"Contents of project root: {os.listdir(project_root)}")
-bin_dir = os.path.join(project_root, "bin")
-if os.path.exists(bin_dir):
-    print(f"Contents of bin directory: {os.listdir(bin_dir)}")
-else:
-    print("Bin directory does not exist!")
 
 # Tell pydub where to find ffmpeg and ffprobe
 AudioSegment.converter = ffmpeg_path

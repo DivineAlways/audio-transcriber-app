@@ -1,7 +1,17 @@
 #!/bin/bash
 # build_files.sh
 
-set -e # Exit immediately if a command exits with a non-zero status.
+set -e echo "Found binaries. Moving them to the project root (not bin directory)"
+# Copy the binaries directly to the project root instead of a bin subdirectory
+# This ensures they're included in the Python function deployment
+mv "$FFMPEG_BIN" "./ffmpeg"
+mv "$FFPROBE_BIN" "./ffprobe"
+
+# Make the binaries executable
+chmod +x "./ffmpeg"
+chmod +x "./ffprobe"
+
+echo "ffmpeg and ffprobe are now in the project root directory."mediately if a command exits with a non-zero status.
 
 echo "Installing ffmpeg static build into the function bundle"
 
