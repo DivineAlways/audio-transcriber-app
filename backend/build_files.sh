@@ -28,3 +28,9 @@ chmod +x "$FFMPEG_DIR/ffmpeg"
 echo "ffmpeg static build installed in $FFMPEG_DIR"
 # Clean up the downloaded archive
 rm "$FFMPEG_ARCHIVE"
+
+# Create a dummy output directory to satisfy the Vercel static builder
+echo "Creating dummy output directory for Vercel..."
+mkdir -p public
+touch public/placeholder.txt
+echo "Build script finished."
