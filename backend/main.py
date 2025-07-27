@@ -46,6 +46,9 @@ app.add_middleware(
 N8N_WEBHOOK_URL = "https://innergcomplete.app.n8n.cloud/webhook/c0b2e4e8-c7b1-41c1-8e6e-db02f612b80d"
 
 
+# Tell pydub where to find ffmpeg
+AudioSegment.converter = "/tmp/ffmpeg/ffmpeg"
+
 def chunk_audio(input_path: str, chunk_duration_minutes: int = 3) -> list:
     """
     Split audio file into smaller chunks.
