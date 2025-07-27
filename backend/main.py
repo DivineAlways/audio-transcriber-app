@@ -167,9 +167,15 @@ async def transcribe_chunks(session_id: str, original_filename: str):
         if session_id in upload_sessions:
             del upload_sessions[session_id]
 
+# Determine the absolute path to the project's root directory
+# This is necessary for locating the 'bin' directory in the Vercel environment
+project_root = os.path.dirname(os.path.abspath(__file__))
+ffmpeg_path = os.path.join(project_root, "bin/ffmpeg")
+ffprobe_path = os.path.join(project_root, "bin/ffprobe")
+
 # Tell pydub where to find ffmpeg and ffprobe
-AudioSegment.converter = "/tmp/ffmpeg/ffmpeg"
-AudioSegment.ffprobe = "/tmp/ffmpeg/ffprobe"
+AudioSegment.converter = ffmpeg_path
+AudioSegment.ffprobe = ffprobe_path
 
 def chunk_audio(input_path: str, chunk_duration_seconds: int = 50) -> list:
     """
