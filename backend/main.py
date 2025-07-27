@@ -190,7 +190,7 @@ def chunk_audio_simple(input_path: str, max_size_mb: int = 10) -> list:
 def process_audio_with_google_directly(file_path: str) -> str:
     """
     Process audio file directly with Google Speech-to-Text without ffmpeg.
-    Let Google handle the audio format conversion.
+    Try different configurations to handle various audio formats.
     """
     try:
         print("Processing audio with Google Speech-to-Text directly...")
@@ -200,55 +200,114 @@ def process_audio_with_google_directly(file_path: str) -> str:
         with io.open(file_path, "rb") as audio_file:
             content = audio_file.read()
         
-        # Let Google auto-detect the audio format
         audio = speech.RecognitionAudio(content=content)
         
-        # Use more flexible config that works with various formats
-        config = speech.RecognitionConfig(
-            # Remove specific encoding - let Google auto-detect
-            language_code="en-US",
-            # Enable automatic punctuation
-            enable_automatic_punctuation=True,
-            # Use enhanced model for better accuracy
-            model="latest_long",
-            # Handle longer audio files
-            use_enhanced=True
-        )
+        # Get file extension to help determine format
+        file_extension = os.path.splitext(file_path)[1].lower()
+        print(f"File extension: {file_extension}")
         
-        # For files larger than 10MB, use long-running recognition
-        file_size_mb = len(content) / (1024 * 1024)
+        # Try different configurations based on file type
+        configs_to_try = []
         
-        if file_size_mb > 10:
-            print(f"Large file detected ({file_size_mb:.2f}MB), using long-running recognition...")
-            
-            # Upload to Google Cloud Storage would be ideal here, but for now we'll split
-            chunks = chunk_audio_simple(file_path, max_size_mb=10)
-            all_transcripts = []
-            
-            for i, chunk_path in enumerate(chunks):
-                print(f"Processing chunk {i+1}/{len(chunks)}...")
-                with io.open(chunk_path, "rb") as chunk_file:
-                    chunk_content = chunk_file.read()
+        if file_extension in ['.mp3']:
+            configs_to_try.append({
+                "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                "language_code": "en-US",
+                "enable_automatic_punctuation": True,
+            })
+        elif file_extension in ['.wav']:
+            configs_to_try.append({
+                "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                "language_code": "en-US",
+                "enable_automatic_punctuation": True,
+            })
+        elif file_extension in ['.flac']:
+            configs_to_try.append({
+                "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
+                "language_code": "en-US",
+                "enable_automatic_punctuation": True,
+            })
+        elif file_extension in ['.m4a', '.mp4', '.mov', '.avi', '.mkv']:
+            # For video files or m4a, try multiple encodings
+            configs_to_try.extend([
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                }
+            ])
+        
+        # If no specific format detected, try common ones
+        if not configs_to_try:
+            configs_to_try.extend([
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                }
+            ])
+        
+        # Try each configuration until one works
+        for i, config_dict in enumerate(configs_to_try):
+            try:
+                print(f"Trying configuration {i+1}: {config_dict['encoding']}")
+                config = speech.RecognitionConfig(**config_dict)
                 
-                chunk_audio = speech.RecognitionAudio(content=chunk_content)
-                response = client.recognize(config=config, audio=chunk_audio)
+                # For files larger than 10MB, split them
+                file_size_mb = len(content) / (1024 * 1024)
                 
-                for result in response.results:
-                    all_transcripts.append(result.alternatives[0].transcript)
-                
-                # Clean up chunk file
-                os.remove(chunk_path)
-            
-            return " ".join(all_transcripts)
-        else:
-            print("Using standard recognition for smaller file...")
-            response = client.recognize(config=config, audio=audio)
-            
-            transcripts = []
-            for result in response.results:
-                transcripts.append(result.alternatives[0].transcript)
-            
-            return " ".join(transcripts)
+                if file_size_mb > 10:
+                    print(f"Large file detected ({file_size_mb:.2f}MB), splitting...")
+                    chunks = chunk_audio_simple(file_path, max_size_mb=10)
+                    all_transcripts = []
+                    
+                    for j, chunk_path in enumerate(chunks):
+                        print(f"Processing chunk {j+1}/{len(chunks)}...")
+                        with io.open(chunk_path, "rb") as chunk_file:
+                            chunk_content = chunk_file.read()
+                        
+                        chunk_audio = speech.RecognitionAudio(content=chunk_content)
+                        response = client.recognize(config=config, audio=chunk_audio)
+                        
+                        for result in response.results:
+                            all_transcripts.append(result.alternatives[0].transcript)
+                        
+                        # Clean up chunk file
+                        os.remove(chunk_path)
+                    
+                    return " ".join(all_transcripts)
+                else:
+                    print("Using standard recognition for smaller file...")
+                    response = client.recognize(config=config, audio=audio)
+                    
+                    transcripts = []
+                    for result in response.results:
+                        transcripts.append(result.alternatives[0].transcript)
+                    
+                    return " ".join(transcripts)
+                    
+            except Exception as config_error:
+                print(f"Configuration {i+1} failed: {config_error}")
+                if i == len(configs_to_try) - 1:  # Last configuration
+                    raise config_error
+                continue
+        
+        return "No transcription could be generated."
             
     except Exception as e:
         print(f"Error processing audio with Google: {e}")
