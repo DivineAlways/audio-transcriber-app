@@ -50,4 +50,9 @@ echo "Cleaning up temporary files..."
 rm "$FFMPEG_ARCHIVE"
 rm -rf "$EXTRACT_DIR"
 
+# Create a dummy output directory to satisfy the Vercel static builder
+echo "Creating dummy output directory for Vercel..."
+mkdir -p public
+touch public/placeholder.txt
+
 echo "Build script finished successfully."
