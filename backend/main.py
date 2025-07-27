@@ -170,15 +170,15 @@ async def transcribe_chunks(session_id: str, original_filename: str):
 # Tell pydub where to find ffmpeg
 AudioSegment.converter = "/tmp/ffmpeg/ffmpeg"
 
-def chunk_audio(input_path: str, chunk_duration_minutes: int = 3) -> list:
+def chunk_audio(input_path: str, chunk_duration_seconds: int = 50) -> list:
     """
     Split audio file into smaller chunks for Google API.
     Returns list of paths to chunk files.
     """
     try:
-        print(f"Splitting audio for Google API into {chunk_duration_minutes}-minute chunks...")
+        print(f"Splitting audio for Google API into {chunk_duration_seconds}-second chunks...")
         audio = AudioSegment.from_file(input_path)
-        chunk_size_ms = chunk_duration_minutes * 60 * 1000
+        chunk_size_ms = chunk_duration_seconds * 1000
         chunks = []
         temp_dir = tempfile.gettempdir()
         
@@ -194,8 +194,8 @@ def chunk_audio(input_path: str, chunk_duration_minutes: int = 3) -> list:
         return chunks
     except Exception as e:
         print(f"Error chunking audio for Google API: {e}")
-        # If chunking fails, try to process the whole file
-        return [input_path]
+        # Re-raise the exception to be caught by the main endpoint handler
+        raise e
 
 # The original endpoint is now deprecated and can be removed or disabled.
 # For now, let's leave it but it won't be used by the new frontend.
