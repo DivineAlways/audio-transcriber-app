@@ -146,7 +146,7 @@ async def transcribe_chunks(session_id: str, original_filename: str):
             raise transcription_error
         # --- End Transcription Logic ---
 
-        if transcript:
+        if transcript and transcript.strip():
             print(f"Transcription successful! Length: {len(transcript)} characters")
             print(f"Transcript preview: {transcript[:200]}...")
             # Send to n8n
@@ -157,8 +157,19 @@ async def transcribe_chunks(session_id: str, original_filename: str):
                 print(f"Error sending to n8n: {e}")
             return JSONResponse(content={"transcript": transcript})
         else:
-            print("No transcription found - transcript is empty")
-            return JSONResponse(content={"message": "No transcription found.", "transcript": ""}, status_code=200)
+            print("No transcription found - transcript is empty or only whitespace")
+            # Still send to n8n for tracking
+            try:
+                requests.post(N8N_WEBHOOK_URL, json={"transcript": "No speech detected", "originalFileName": original_filename, "status": "no_speech"})
+                print("Sent 'no speech' notification to n8n webhook")
+            except Exception as e:
+                print(f"Error sending to n8n: {e}")
+            
+            return JSONResponse(content={
+                "transcript": "",
+                "message": "No speech detected in the audio file. This could happen if:\n• The audio is too quiet or unclear\n• The file contains only music or background noise\n• The speech is in a language not supported\n• The audio quality is too poor for recognition\n\nTry with a clearer audio file containing clear speech.",
+                "status": "no_speech_detected"
+            }, status_code=200)
 
     except Exception as e:
         print(f"MAJOR ERROR in transcribe_chunks: {e}")
@@ -232,8 +243,8 @@ def chunk_audio_simple(input_path: str, max_size_mb: int = 10) -> list:
 
 def process_audio_with_google_directly(file_path: str) -> str:
     """
-    Process audio file directly with Google Speech-to-Text without ffmpeg.
-    Try different configurations to handle various audio formats.
+    Process audio file directly with Google Speech-to-Text.
+    Automatically handles short vs long audio files.
     """
     try:
         print("Processing audio with Google Speech-to-Text directly...")
@@ -249,196 +260,202 @@ def process_audio_with_google_directly(file_path: str) -> str:
         file_extension = os.path.splitext(file_path)[1].lower()
         print(f"File extension: {file_extension}")
         
+        # Check file duration/size to determine if we need long-running recognition
+        file_size_mb = len(content) / (1024 * 1024)
+        print(f"File size: {file_size_mb:.2f} MB")
+        
+        # For files larger than 10MB or if we know it's likely > 1 minute, use chunking approach
+        if file_size_mb > 10:
+            print("Large file detected, using chunking approach...")
+            return process_large_audio_file(file_path, file_extension)
+        
         # Try different configurations based on file type
         configs_to_try = []
         
+        # Create base configurations for different formats
+        base_configs = []
+        
         if file_extension in ['.mp3']:
-            configs_to_try.extend([
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                    "sample_rate_hertz": 22050,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                    "sample_rate_hertz": 16000,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                }
+            base_configs.extend([
+                {"encoding": speech.RecognitionConfig.AudioEncoding.MP3, "sample_rate_hertz": 44100},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.MP3, "sample_rate_hertz": 22050},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.MP3, "sample_rate_hertz": 16000},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.MP3},  # No sample rate - let Google detect
             ])
         elif file_extension in ['.wav']:
-            configs_to_try.extend([
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    "sample_rate_hertz": 22050,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    "sample_rate_hertz": 16000,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                }
+            base_configs.extend([
+                {"encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16, "sample_rate_hertz": 44100},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16, "sample_rate_hertz": 22050},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16, "sample_rate_hertz": 16000},
             ])
         elif file_extension in ['.flac']:
-            configs_to_try.extend([
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
-                    "sample_rate_hertz": 22050,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
-                    "sample_rate_hertz": 16000,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                }
+            base_configs.extend([
+                {"encoding": speech.RecognitionConfig.AudioEncoding.FLAC, "sample_rate_hertz": 44100},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.FLAC, "sample_rate_hertz": 22050},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.FLAC, "sample_rate_hertz": 16000},
             ])
-        elif file_extension in ['.m4a', '.mp4', '.mov', '.avi', '.mkv']:
-            # For video files or m4a, try multiple encodings with different sample rates
-            configs_to_try.extend([
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                    "sample_rate_hertz": 22050,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    "sample_rate_hertz": 16000,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                }
+        else:
+            # For other formats (including video), try MP3 and LINEAR16
+            base_configs.extend([
+                {"encoding": speech.RecognitionConfig.AudioEncoding.MP3, "sample_rate_hertz": 44100},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.MP3},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16, "sample_rate_hertz": 44100},
+                {"encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16, "sample_rate_hertz": 16000},
             ])
         
-        # If no specific format detected, try common ones with various sample rates
-        if not configs_to_try:
-            configs_to_try.extend([
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                    "sample_rate_hertz": 22050,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    "sample_rate_hertz": 16000,
-                    "language_code": "en-US",
-                    "enable_automatic_punctuation": True,
-                },
-                {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
-                    "sample_rate_hertz": 44100,
-                    "language_code": "en-US",
+        # Try with multiple languages
+        languages_to_try = ["en-US", "en-GB"]
+        
+        for base_config in base_configs:
+            for language in languages_to_try:
+                config_dict = {
+                    **base_config,
+                    "language_code": language,
                     "enable_automatic_punctuation": True,
                 }
-            ])
+                configs_to_try.append(config_dict)
+                
+        print(f"Total configurations to try: {len(configs_to_try)}")
         
         # Try each configuration until one works
         for i, config_dict in enumerate(configs_to_try):
             try:
                 encoding_name = config_dict['encoding'].name if hasattr(config_dict['encoding'], 'name') else str(config_dict['encoding'])
                 sample_rate = config_dict.get('sample_rate_hertz', 'auto')
-                print(f"Trying configuration {i+1}: {encoding_name} @ {sample_rate}Hz")
+                language = config_dict.get('language_code', 'unknown')
+                print(f"Trying configuration {i+1}: {encoding_name} @ {sample_rate}Hz, language: {language}")
+                
                 config = speech.RecognitionConfig(**config_dict)
                 
-                # For files larger than 10MB, split them
-                file_size_mb = len(content) / (1024 * 1024)
+                # Use standard recognition for smaller files
+                print("Using standard recognition...")
+                response = client.recognize(config=config, audio=audio)
                 
-                if file_size_mb > 10:
-                    print(f"Large file detected ({file_size_mb:.2f}MB), splitting...")
-                    chunks = chunk_audio_simple(file_path, max_size_mb=10)
-                    all_transcripts = []
+                print(f"Google API response received with {len(response.results)} results")
+                
+                transcripts = []
+                for j, result in enumerate(response.results):
+                    print(f"Processing result {j+1}:")
+                    print(f"  - Alternatives count: {len(result.alternatives)}")
                     
-                    for j, chunk_path in enumerate(chunks):
-                        print(f"Processing chunk {j+1}/{len(chunks)}...")
-                        with io.open(chunk_path, "rb") as chunk_file:
-                            chunk_content = chunk_file.read()
-                        
-                        chunk_audio = speech.RecognitionAudio(content=chunk_content)
-                        response = client.recognize(config=config, audio=chunk_audio)
-                        
-                        for result in response.results:
-                            all_transcripts.append(result.alternatives[0].transcript)
-                        
-                        # Clean up chunk file
-                        os.remove(chunk_path)
-                    
-                    return " ".join(all_transcripts)
-                else:
-                    print("Using standard recognition for smaller file...")
-                    response = client.recognize(config=config, audio=audio)
-                    
-                    print(f"Google API response received with {len(response.results)} results")
-                    transcripts = []
-                    for j, result in enumerate(response.results):
-                        if result.alternatives:
-                            transcript_text = result.alternatives[0].transcript
-                            confidence = result.alternatives[0].confidence if hasattr(result.alternatives[0], 'confidence') else 'N/A'
-                            print(f"Result {j+1}: {transcript_text} (confidence: {confidence})")
-                            transcripts.append(transcript_text)
-                        else:
-                            print(f"Result {j+1}: No alternatives found")
-                    
-                    final_transcript = " ".join(transcripts)
-                    print(f"Final transcript length: {len(final_transcript)}")
-                    return final_transcript
+                    if result.alternatives:
+                        for k, alternative in enumerate(result.alternatives):
+                            transcript_text = alternative.transcript
+                            confidence = alternative.confidence if hasattr(alternative, 'confidence') else 'N/A'
+                            print(f"  - Alternative {k+1}: '{transcript_text}' (confidence: {confidence})")
+                            if k == 0:  # Only take the first (best) alternative
+                                transcripts.append(transcript_text)
+                    else:
+                        print(f"  - No alternatives found in result {j+1}")
+                
+                final_transcript = " ".join(transcripts)
+                print(f"Final transcript: '{final_transcript}' (length: {len(final_transcript)})")
+                
+                # If we got an empty result, this config worked but found no speech
+                if len(final_transcript.strip()) == 0:
+                    print(f"Configuration {i+1} worked but found no speech content")
+                    # Try next configuration instead of returning empty
+                    continue
+                
+                return final_transcript
                     
             except Exception as config_error:
-                print(f"Configuration {i+1} failed: {config_error}")
+                error_message = str(config_error)
+                print(f"Configuration {i+1} failed: {error_message}")
+                
+                # Check if this is the "too long" error
+                if "Sync input too long" in error_message or "too long" in error_message.lower():
+                    print("Audio is too long for sync recognition, switching to chunking approach...")
+                    return process_large_audio_file(file_path, file_extension)
+                
                 if i == len(configs_to_try) - 1:  # Last configuration
-                    raise config_error
+                    print("All configurations failed")
+                    # If all configs failed, try the chunking approach as last resort
+                    print("Trying chunking approach as fallback...")
+                    return process_large_audio_file(file_path, file_extension)
                 continue
         
-        return "No transcription could be generated."
+        return ""  # No speech detected
             
     except Exception as e:
-        print(f"Error processing audio with Google: {e}")
+        error_message = str(e)
+        print(f"Error processing audio with Google: {error_message}")
+        
+        # Check if this is the "too long" error
+        if "Sync input too long" in error_message or "too long" in error_message.lower():
+            print("Audio is too long, trying chunking approach...")
+            return process_large_audio_file(file_path, file_extension)
+        
+        raise e
+
+def process_large_audio_file(file_path: str, file_extension: str) -> str:
+    """
+    Process large audio files by splitting them into smaller chunks.
+    """
+    try:
+        print("Processing large audio file with chunking...")
+        
+        # Split the file into smaller chunks (by file size, not time)
+        chunks = chunk_audio_simple(file_path, max_size_mb=8)  # Smaller chunks for better reliability
+        all_transcripts = []
+        
+        client = speech.SpeechClient()
+        
+        # Determine best config for this file type
+        if file_extension in ['.mp3']:
+            config = speech.RecognitionConfig(
+                encoding=speech.RecognitionConfig.AudioEncoding.MP3,
+                language_code="en-US",
+                enable_automatic_punctuation=True,
+            )
+        elif file_extension in ['.wav']:
+            config = speech.RecognitionConfig(
+                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=16000,
+                language_code="en-US",
+                enable_automatic_punctuation=True,
+            )
+        else:
+            # Default to MP3 for video files and others
+            config = speech.RecognitionConfig(
+                encoding=speech.RecognitionConfig.AudioEncoding.MP3,
+                language_code="en-US",
+                enable_automatic_punctuation=True,
+            )
+        
+        for i, chunk_path in enumerate(chunks):
+            try:
+                print(f"Processing chunk {i+1}/{len(chunks)}...")
+                with io.open(chunk_path, "rb") as chunk_file:
+                    chunk_content = chunk_file.read()
+                
+                chunk_audio = speech.RecognitionAudio(content=chunk_content)
+                response = client.recognize(config=config, audio=chunk_audio)
+                
+                for result in response.results:
+                    if result.alternatives:
+                        transcript_text = result.alternatives[0].transcript
+                        print(f"Chunk {i+1} transcript: {transcript_text}")
+                        all_transcripts.append(transcript_text)
+                
+                # Clean up chunk file
+                os.remove(chunk_path)
+                
+            except Exception as chunk_error:
+                print(f"Error processing chunk {i+1}: {chunk_error}")
+                # Continue with other chunks
+                try:
+                    os.remove(chunk_path)
+                except:
+                    pass
+                continue
+        
+        final_transcript = " ".join(all_transcripts)
+        print(f"Combined transcript from {len(chunks)} chunks: {len(final_transcript)} characters")
+        return final_transcript
+        
+    except Exception as e:
+        print(f"Error in process_large_audio_file: {e}")
         raise e
 
 # The original endpoint is now deprecated and can be removed or disabled.
