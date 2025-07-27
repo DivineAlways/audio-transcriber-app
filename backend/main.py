@@ -173,6 +173,21 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 ffmpeg_path = os.path.join(project_root, "bin/ffmpeg")
 ffprobe_path = os.path.join(project_root, "bin/ffprobe")
 
+# Debug: Log the paths and check if files exist
+print(f"Project root: {project_root}")
+print(f"FFmpeg path: {ffmpeg_path}")
+print(f"FFprobe path: {ffprobe_path}")
+print(f"FFmpeg exists: {os.path.exists(ffmpeg_path)}")
+print(f"FFprobe exists: {os.path.exists(ffprobe_path)}")
+
+# List contents of project root and bin directory for debugging
+print(f"Contents of project root: {os.listdir(project_root)}")
+bin_dir = os.path.join(project_root, "bin")
+if os.path.exists(bin_dir):
+    print(f"Contents of bin directory: {os.listdir(bin_dir)}")
+else:
+    print("Bin directory does not exist!")
+
 # Tell pydub where to find ffmpeg and ffprobe
 AudioSegment.converter = ffmpeg_path
 AudioSegment.ffprobe = ffprobe_path
