@@ -1,17 +1,7 @@
 #!/bin/bash
 # build_files.sh
 
-set -e echo "Found binaries. Moving them to the project root (not bin directory)"
-# Copy the binaries directly to the project root instead of a bin subdirectory
-# This ensures they're included in the Python function deployment
-mv "$FFMPEG_BIN" "./ffmpeg"
-mv "$FFPROBE_BIN" "./ffprobe"
-
-# Make the binaries executable
-chmod +x "./ffmpeg"
-chmod +x "./ffprobe"
-
-echo "ffmpeg and ffprobe are now in the project root directory."mediately if a command exits with a non-zero status.
+set -e # Exit immediately if a command exits with a non-zero status.
 
 echo "Installing ffmpeg static build into the function bundle"
 
@@ -41,13 +31,29 @@ if [ -z "$FFMPEG_BIN" ] || [ -z "$FFPROBE_BIN" ]; then
     exit 1
 fi
 
-echo "Found binaries. Moving them to $BIN_DIR"
-mv "$FFMPEG_BIN" "$BIN_DIR/"
-mv "$FFPROBE_BIN" "$BIN_DIR/"
+echo "Found binaries. Moving them to the project root directory"
+# Copy the binaries directly to the project root instead of a subdirectory
+# This ensures they're included in the Python function deployment
+mv "$FFMPEG_BIN" "./ffmpeg"
+mv "$FFPROBE_BIN" "./ffprobe"
 
 # Make the binaries executable
-chmod +x "$BIN_DIR/ffmpeg"
-chmod +x "$BIN_DIR/ffprobe"
+chmod +x "./ffmpeg"
+chmod +x "./ffprobe"
+
+echo "ffmpeg and ffprobe are now in the project root directory."
+
+# --- Cleanup ---
+echo "Cleaning up temporary files..."
+rm "$FFMPEG_ARCHIVE"
+rm -rf "$EXTRACT_DIR"
+
+# Create a dummy output directory to satisfy the Vercel static builder
+echo "Creating dummy output directory for Vercel..."
+mkdir -p public
+touch public/placeholder.txt
+
+echo "Build script finished successfully."
 
 echo "ffmpeg and ffprobe are now in the $BIN_DIR directory."
 
