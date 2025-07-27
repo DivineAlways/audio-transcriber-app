@@ -126,14 +126,18 @@ async def transcribe_chunks(session_id: str, original_filename: str):
         # --- End Transcription Logic ---
 
         if transcript:
+            print(f"Transcription successful! Length: {len(transcript)} characters")
+            print(f"Transcript preview: {transcript[:200]}...")
             # Send to n8n
             try:
                 requests.post(N8N_WEBHOOK_URL, json={"transcript": transcript, "originalFileName": original_filename})
+                print("Successfully sent to n8n webhook")
             except Exception as e:
                 print(f"Error sending to n8n: {e}")
             return JSONResponse(content={"transcript": transcript})
         else:
-            return JSONResponse(content={"message": "No transcription found."}, status_code=404)
+            print("No transcription found - transcript is empty")
+            return JSONResponse(content={"message": "No transcription found.", "transcript": ""}, status_code=200)
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -371,11 +375,20 @@ def process_audio_with_google_directly(file_path: str) -> str:
                     print("Using standard recognition for smaller file...")
                     response = client.recognize(config=config, audio=audio)
                     
+                    print(f"Google API response received with {len(response.results)} results")
                     transcripts = []
-                    for result in response.results:
-                        transcripts.append(result.alternatives[0].transcript)
+                    for j, result in enumerate(response.results):
+                        if result.alternatives:
+                            transcript_text = result.alternatives[0].transcript
+                            confidence = result.alternatives[0].confidence if hasattr(result.alternatives[0], 'confidence') else 'N/A'
+                            print(f"Result {j+1}: {transcript_text} (confidence: {confidence})")
+                            transcripts.append(transcript_text)
+                        else:
+                            print(f"Result {j+1}: No alternatives found")
                     
-                    return " ".join(transcripts)
+                    final_transcript = " ".join(transcripts)
+                    print(f"Final transcript length: {len(final_transcript)}")
+                    return final_transcript
                     
             except Exception as config_error:
                 print(f"Configuration {i+1} failed: {config_error}")

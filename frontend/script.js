@@ -61,9 +61,17 @@ document.getElementById('transcribeBtn').addEventListener('click', async () => {
 
         if (transcribeResponse.ok) {
             const data = await transcribeResponse.json();
-            transcriptionDiv.textContent = data.transcript;
+            console.log('Transcription response:', data);
+            
+            if (data.transcript && data.transcript.trim()) {
+                transcriptionDiv.textContent = data.transcript;
+            } else {
+                transcriptionDiv.textContent = 'Transcription completed but no text was detected. This could happen if:\n• The audio is too quiet or unclear\n• The file contains no speech\n• The audio format is not compatible\n\nTry with a clearer audio file or check that the file contains speech.';
+            }
         } else {
+            console.error('Transcription failed:', transcribeResponse.status);
             const errorData = await transcribeResponse.json();
+            console.error('Error data:', errorData);
             throw new Error(errorData.error || 'Transcription failed.');
         }
 
