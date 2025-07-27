@@ -16,10 +16,6 @@ echo "ffmpeg and ffprobe are now in the project root directory."mediately if a c
 echo "Installing ffmpeg static build into the function bundle"
 
 # --- Configuration ---
-# Directory to place the final binaries
-BIN_DIR="bin"
-mkdir -p "$BIN_DIR"
-
 # Temporary directories for download and extraction
 TMP_DIR="/tmp"
 FFMPEG_ARCHIVE="$TMP_DIR/ffmpeg.tar.xz"
