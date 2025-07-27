@@ -105,24 +105,45 @@ async def transcribe_chunks(session_id: str, original_filename: str):
     assembled_file_path = os.path.join(temp_dir, original_filename)
 
     try:
+        print(f"=== TRANSCRIBE CHUNKS START ===")
+        print(f"Session ID: {session_id}")
+        print(f"Original filename: {original_filename}")
+        print(f"Session dir: {session_dir}")
+        print(f"Assembled file path: {assembled_file_path}")
+        
         if not os.path.exists(session_dir):
+            print(f"ERROR: Session directory does not exist: {session_dir}")
             return JSONResponse(content={"error": "Invalid session ID or no chunks found."}, status_code=404)
 
         # Assemble the file from chunks
         print(f"Assembling file for session {session_id}...")
         with open(assembled_file_path, "wb") as assembled_file:
             # Assuming chunks are named chunk_0, chunk_1, etc.
-            total_chunks = len(os.listdir(session_dir))
-            for i in range(total_chunks):
-                chunk_path = os.path.join(session_dir, f"chunk_{i}")
-                with open(chunk_path, "rb") as chunk_file:
-                    assembled_file.write(chunk_file.read())
+            chunk_files = os.listdir(session_dir)
+            chunk_files.sort(key=lambda x: int(x.split('_')[1]) if '_' in x else 0)
+            print(f"Found chunk files: {chunk_files}")
+            
+            for chunk_file in chunk_files:
+                chunk_path = os.path.join(session_dir, chunk_file)
+                print(f"Processing chunk: {chunk_path}")
+                with open(chunk_path, "rb") as chunk_file_handle:
+                    assembled_file.write(chunk_file_handle.read())
         
         print(f"File assembled at: {assembled_file_path}")
+        file_size = os.path.getsize(assembled_file_path)
+        print(f"Assembled file size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
 
         # --- Start Transcription Logic (using Google's built-in audio processing) ---
         print("Starting transcription with Google Speech-to-Text...")
-        transcript = process_audio_with_google_directly(assembled_file_path)
+        try:
+            transcript = process_audio_with_google_directly(assembled_file_path)
+            print(f"Transcription completed. Result: '{transcript}' (length: {len(transcript)})")
+        except Exception as transcription_error:
+            print(f"TRANSCRIPTION ERROR: {transcription_error}")
+            print(f"Error type: {type(transcription_error).__name__}")
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
+            raise transcription_error
         # --- End Transcription Logic ---
 
         if transcript:
@@ -140,18 +161,36 @@ async def transcribe_chunks(session_id: str, original_filename: str):
             return JSONResponse(content={"message": "No transcription found.", "transcript": ""}, status_code=200)
 
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        print(f"MAJOR ERROR in transcribe_chunks: {e}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return JSONResponse(content={"error": f"Transcription failed: {str(e)}"}, status_code=500)
     finally:
         # Clean up session directory and assembled file
-        if os.path.exists(session_dir):
-            import shutil
-            shutil.rmtree(session_dir)
-            print(f"Cleaned up session directory: {session_dir}")
-        if os.path.exists(assembled_file_path):
-            os.remove(assembled_file_path)
-            print(f"Cleaned up assembled file: {assembled_file_path}")
-        if session_id in upload_sessions:
-            del upload_sessions[session_id]
+        try:
+            if os.path.exists(session_dir):
+                import shutil
+                shutil.rmtree(session_dir)
+                print(f"Cleaned up session directory: {session_dir}")
+        except Exception as cleanup_error:
+            print(f"Error cleaning up session directory: {cleanup_error}")
+            
+        try:
+            if os.path.exists(assembled_file_path):
+                os.remove(assembled_file_path)
+                print(f"Cleaned up assembled file: {assembled_file_path}")
+        except Exception as cleanup_error:
+            print(f"Error cleaning up assembled file: {cleanup_error}")
+            
+        try:
+            if session_id in upload_sessions:
+                del upload_sessions[session_id]
+                print(f"Cleaned up session from memory: {session_id}")
+        except Exception as cleanup_error:
+            print(f"Error cleaning up session from memory: {cleanup_error}")
+            
+        print(f"=== TRANSCRIBE CHUNKS END ===")
 
 def chunk_audio_simple(input_path: str, max_size_mb: int = 10) -> list:
     """
