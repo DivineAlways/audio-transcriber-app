@@ -210,53 +210,127 @@ def process_audio_with_google_directly(file_path: str) -> str:
         configs_to_try = []
         
         if file_extension in ['.mp3']:
-            configs_to_try.append({
-                "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
-                "language_code": "en-US",
-                "enable_automatic_punctuation": True,
-            })
-        elif file_extension in ['.wav']:
-            configs_to_try.append({
-                "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                "language_code": "en-US",
-                "enable_automatic_punctuation": True,
-            })
-        elif file_extension in ['.flac']:
-            configs_to_try.append({
-                "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
-                "language_code": "en-US",
-                "enable_automatic_punctuation": True,
-            })
-        elif file_extension in ['.m4a', '.mp4', '.mov', '.avi', '.mkv']:
-            # For video files or m4a, try multiple encodings
             configs_to_try.extend([
                 {
                     "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "sample_rate_hertz": 44100,
                     "language_code": "en-US",
                     "enable_automatic_punctuation": True,
                 },
                 {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "sample_rate_hertz": 22050,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "sample_rate_hertz": 16000,
                     "language_code": "en-US",
                     "enable_automatic_punctuation": True,
                 }
             ])
-        
-        # If no specific format detected, try common ones
-        if not configs_to_try:
+        elif file_extension in ['.wav']:
             configs_to_try.extend([
                 {
-                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": 44100,
                     "language_code": "en-US",
                     "enable_automatic_punctuation": True,
                 },
                 {
                     "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": 22050,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": 16000,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                }
+            ])
+        elif file_extension in ['.flac']:
+            configs_to_try.extend([
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
+                    "sample_rate_hertz": 44100,
                     "language_code": "en-US",
                     "enable_automatic_punctuation": True,
                 },
                 {
                     "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
+                    "sample_rate_hertz": 22050,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
+                    "sample_rate_hertz": 16000,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                }
+            ])
+        elif file_extension in ['.m4a', '.mp4', '.mov', '.avi', '.mkv']:
+            # For video files or m4a, try multiple encodings with different sample rates
+            configs_to_try.extend([
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "sample_rate_hertz": 44100,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "sample_rate_hertz": 22050,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": 44100,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": 16000,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                }
+            ])
+        
+        # If no specific format detected, try common ones with various sample rates
+        if not configs_to_try:
+            configs_to_try.extend([
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "sample_rate_hertz": 44100,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.MP3,
+                    "sample_rate_hertz": 22050,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": 44100,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": 16000,
+                    "language_code": "en-US",
+                    "enable_automatic_punctuation": True,
+                },
+                {
+                    "encoding": speech.RecognitionConfig.AudioEncoding.FLAC,
+                    "sample_rate_hertz": 44100,
                     "language_code": "en-US",
                     "enable_automatic_punctuation": True,
                 }
@@ -265,7 +339,9 @@ def process_audio_with_google_directly(file_path: str) -> str:
         # Try each configuration until one works
         for i, config_dict in enumerate(configs_to_try):
             try:
-                print(f"Trying configuration {i+1}: {config_dict['encoding']}")
+                encoding_name = config_dict['encoding'].name if hasattr(config_dict['encoding'], 'name') else str(config_dict['encoding'])
+                sample_rate = config_dict.get('sample_rate_hertz', 'auto')
+                print(f"Trying configuration {i+1}: {encoding_name} @ {sample_rate}Hz")
                 config = speech.RecognitionConfig(**config_dict)
                 
                 # For files larger than 10MB, split them
