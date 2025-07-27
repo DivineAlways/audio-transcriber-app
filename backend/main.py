@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, APIRouter
+from fastapi import FastAPI, File, UploadFile, APIRouter, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -46,16 +46,137 @@ app.add_middleware(
 N8N_WEBHOOK_URL = "https://innergcomplete.app.n8n.cloud/webhook/c0b2e4e8-c7b1-41c1-8e6e-db02f612b80d"
 
 
+import uuid
+
+# ... existing code ...
+
+# --- n8n Webhook Configuration ---
+N8N_WEBHOOK_URL = "https://innergcomplete.app.n8n.cloud/webhook/c0b2e4e8-c7b1-41c1-8e6e-db02f612b80d"
+
+# --- Chunk Upload Handling ---
+# A simple in-memory dictionary to track chunked uploads.
+# In a production scenario, you might use Redis or another persistent store.
+upload_sessions = {}
+
+@router.post("/upload_chunk")
+async def upload_chunk(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...)
+):
+    """
+    Receives a single chunk of a large file and saves it.
+    """
+    temp_dir = "/tmp"
+    session_dir = os.path.join(temp_dir, session_id)
+    os.makedirs(session_dir, exist_ok=True)
+    
+    chunk_path = os.path.join(session_dir, f"chunk_{chunk_index}")
+    
+    try:
+        with open(chunk_path, "wb") as buffer:
+            buffer.write(await file.read())
+        
+        print(f"Received chunk {chunk_index}/{total_chunks} for session {session_id}")
+        
+        if session_id not in upload_sessions:
+            upload_sessions[session_id] = {"total_chunks": total_chunks, "chunks_received": set()}
+        
+        upload_sessions[session_id]["chunks_received"].add(chunk_index)
+        
+        # Check if all chunks have been received
+        if len(upload_sessions[session_id]["chunks_received"]) == total_chunks:
+            print(f"All chunks received for session {session_id}. Ready for assembly.")
+            
+        return JSONResponse(content={"message": f"Chunk {chunk_index} received."})
+
+    except Exception as e:
+        print(f"Error receiving chunk {chunk_index} for session {session_id}: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@router.post("/transcribe_chunks")
+async def transcribe_chunks(session_id: str, original_filename: str):
+    """
+    Assembles chunks, transcribes the file, and cleans up.
+    """
+    temp_dir = "/tmp"
+    session_dir = os.path.join(temp_dir, session_id)
+    assembled_file_path = os.path.join(temp_dir, original_filename)
+
+    try:
+        if not os.path.exists(session_dir):
+            return JSONResponse(content={"error": "Invalid session ID or no chunks found."}, status_code=404)
+
+        # Assemble the file from chunks
+        print(f"Assembling file for session {session_id}...")
+        with open(assembled_file_path, "wb") as assembled_file:
+            # Assuming chunks are named chunk_0, chunk_1, etc.
+            total_chunks = len(os.listdir(session_dir))
+            for i in range(total_chunks):
+                chunk_path = os.path.join(session_dir, f"chunk_{i}")
+                with open(chunk_path, "rb") as chunk_file:
+                    assembled_file.write(chunk_file.read())
+        
+        print(f"File assembled at: {assembled_file_path}")
+
+        # --- Start Transcription Logic (adapted from original function) ---
+        client = speech.SpeechClient()
+        audio_chunks = chunk_audio(assembled_file_path) # This is the backend chunking for Google API
+        all_transcripts = []
+
+        for i, chunk_path in enumerate(audio_chunks):
+            print(f"\nProcessing Google API chunk {i+1}/{len(audio_chunks)}...")
+            with io.open(chunk_path, "rb") as audio_file:
+                content = audio_file.read()
+            audio = speech.RecognitionAudio(content=content)
+            config = speech.RecognitionConfig(
+                encoding=speech.RecognitionConfig.AudioEncoding.MP3,
+                sample_rate_hertz=8000,
+                language_code="en-US",
+            )
+            response = client.recognize(config=config, audio=audio)
+            for result in response.results:
+                all_transcripts.append(result.alternatives[0].transcript)
+        
+        transcript = " ".join(all_transcripts)
+        # --- End Transcription Logic ---
+
+        if transcript:
+            # Send to n8n
+            try:
+                requests.post(N8N_WEBHOOK_URL, json={"transcript": transcript, "originalFileName": original_filename})
+            except Exception as e:
+                print(f"Error sending to n8n: {e}")
+            return JSONResponse(content={"transcript": transcript})
+        else:
+            return JSONResponse(content={"message": "No transcription found."}, status_code=404)
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+    finally:
+        # Clean up session directory and assembled file
+        if os.path.exists(session_dir):
+            import shutil
+            shutil.rmtree(session_dir)
+            print(f"Cleaned up session directory: {session_dir}")
+        if os.path.exists(assembled_file_path):
+            os.remove(assembled_file_path)
+            print(f"Cleaned up assembled file: {assembled_file_path}")
+        if session_id in upload_sessions:
+            del upload_sessions[session_id]
+
 # Tell pydub where to find ffmpeg
 AudioSegment.converter = "/tmp/ffmpeg/ffmpeg"
 
 def chunk_audio(input_path: str, chunk_duration_minutes: int = 3) -> list:
     """
-    Split audio file into smaller chunks.
+    Split audio file into smaller chunks for Google API.
     Returns list of paths to chunk files.
     """
     try:
-        print(f"Splitting audio into {chunk_duration_minutes}-minute chunks...")
+        print(f"Splitting audio for Google API into {chunk_duration_minutes}-minute chunks...")
         audio = AudioSegment.from_file(input_path)
         chunk_size_ms = chunk_duration_minutes * 60 * 1000
         chunks = []
@@ -66,116 +187,30 @@ def chunk_audio(input_path: str, chunk_duration_minutes: int = 3) -> list:
             chunk = audio[chunk_start:chunk_end]
             chunk = chunk.set_frame_rate(8000).set_channels(1)
             
-            chunk_path = os.path.join(temp_dir, f"audio_chunk_{i}.mp3")
+            chunk_path = os.path.join(temp_dir, f"google_api_chunk_{i}.mp3")
             chunk.export(chunk_path, format="mp3", bitrate="16k")
             chunks.append(chunk_path)
             
-            chunk_size = os.path.getsize(chunk_path)
-            print(f"Chunk {i+1}: {chunk_size / (1024*1024):.2f} MB")
-        
         return chunks
     except Exception as e:
-        print(f"Error chunking audio: {e}")
+        print(f"Error chunking audio for Google API: {e}")
+        # If chunking fails, try to process the whole file
         return [input_path]
 
+# The original endpoint is now deprecated and can be removed or disabled.
+# For now, let's leave it but it won't be used by the new frontend.
 @router.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
     """
-    Transcribes an audio file using Google Speech-to-Text.
+    DEPRECATED: This endpoint does not support chunked uploads and will fail for large files on Vercel.
     """
-    # Vercel's serverless environment is stateless, and only the /tmp directory is writable.
-    temp_dir = "/tmp"
-    temp_audio_path = os.path.join(temp_dir, file.filename)
-
-    try:
-        # Save the uploaded file to the /tmp directory
-        with open(temp_audio_path, "wb") as buffer:
-            buffer.write(await file.read())
-        
-        print(f"Temporary file created at: {temp_audio_path}")
-        print(f"Does the file exist? {os.path.exists(temp_audio_path)}")
-        print(f"File size: {os.path.getsize(temp_audio_path)} bytes")
-
-        client = speech.SpeechClient()
-        
-        # Pass the correct path to the chunking function
-        audio_chunks = chunk_audio(temp_audio_path)
-        
-        all_transcripts = []
-        
-        for i, chunk_path in enumerate(audio_chunks):
-            print(f"\nProcessing chunk {i+1}/{len(audio_chunks)} at {chunk_path}...")
-            print(f"Does chunk exist? {os.path.exists(chunk_path)}")
-            
-            with io.open(chunk_path, "rb") as audio_file:
-                content = audio_file.read()
-                audio = speech.RecognitionAudio(content=content)
-
-            config = speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.MP3,
-                sample_rate_hertz=8000,
-                language_code="en-US",
-            )
-
-            print(f"Transcribing chunk {i+1}...")
-            response = client.recognize(config=config, audio=audio)
-            
-            chunk_transcript = ""
-            for result in response.results:
-                chunk_transcript += result.alternatives[0].transcript + " "
-            
-            if chunk_transcript.strip():
-                all_transcripts.append(chunk_transcript.strip())
-                print(f"Chunk {i+1} transcribed successfully.")
-            else:
-                print(f"No transcription found for chunk {i+1}.")
-        
-        transcript = " ".join(all_transcripts)
-        
-        # Clean up all temporary files
-        for chunk_path in audio_chunks:
-            try:
-                if os.path.exists(chunk_path):
-                    os.remove(chunk_path)
-                    print(f"Cleaned up chunk: {os.path.basename(chunk_path)}")
-            except Exception as e:
-                print(f"Error cleaning up chunk {chunk_path}: {e}")
-        
-        if os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
-            print(f"Cleaned up original temp file: {temp_audio_path}")
-
-        if transcript:
-            # Send transcript to n8n webhook
-            try:
-                payload = {
-                    "transcript": transcript,
-                    "originalFileName": file.filename,
-                }
-                print(f"Sending transcript to n8n webhook: {N8N_WEBHOOK_URL}...")
-                n8n_response = requests.post(N8N_WEBHOOK_URL, json=payload)
-                n8n_response.raise_for_status()
-                print("Successfully sent data to n8n webhook.")
-            except requests.exceptions.RequestException as e:
-                print(f"Error sending data to n8n webhook: {e}")
-
-            return JSONResponse(content={"transcript": transcript})
-        else:
-            return JSONResponse(content={"message": "No transcription found for the audio file."}, status_code=404)
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        # Clean up in case of error
-        if os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+    return JSONResponse(
+        content={"error": "This endpoint is deprecated. Please use the chunked upload flow."},
+        status_code=400
+    )
 
 app.include_router(router)
 
 if __name__ == "__main__":
-    if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-        print("WARNING: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.")
-        print("Please set it to the path of your Google Cloud service account key JSON file.")
-        print("Example: export GOOGLE_APPLICATION_CREDENTIALS=\"/path/to/your/key.json\"")
-        exit(1)
+    # ... existing code ...
     uvicorn.run(app, host="0.0.0.0", port=8000)

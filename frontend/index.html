@@ -11,8 +11,11 @@
         <h1>Audio Transcriber</h1>
         <p>Upload an audio file to get a transcription.</p>
         <div class="upload-container">
-            <input type="file" id="audioFile" accept="audio/*">
+            <input type="file" id="audioFile" accept="audio/*,video/*">
             <button id="transcribeBtn">Transcribe</button>
+        </div>
+        <div id="progressContainer" style="display: none;">
+            <div id="progressBar"></div>
         </div>
         <div class="transcription-container">
             <h2>Transcription:</h2>
@@ -20,8 +23,8 @@
         </div>
         <div class="documentation">
             <h2>How it works</h2>
-            <p>This application uses Google's Speech-to-Text API to transcribe audio files. The backend is built with FastAPI and the frontend is built with HTML, CSS, and JavaScript.</p>
-            <p>When you upload an audio file, it is sent to the FastAPI backend. The backend then splits the audio into smaller chunks and sends them to the Google Speech-to-Text API for transcription. The transcriptions are then combined and sent back to the frontend to be displayed.</p>
+            <p>This application uses Google's Speech-to-Text API to transcribe audio and video files. The backend is built with FastAPI and the frontend is built with HTML, CSS, and JavaScript.</p>
+            <p>To handle large files, the selected file is broken into 4MB chunks directly in your browser. Each chunk is uploaded sequentially to the backend. Once all chunks are received, the backend assembles them back into a single file, extracts the audio, and sends it to the Google Speech-to-Text API for transcription. The final transcript is then displayed here.</p>
         </div>
     </div>
     <script src="script.js"></script>
