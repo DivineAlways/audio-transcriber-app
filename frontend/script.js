@@ -1,5 +1,5 @@
 // Backend API URL
-const API_URL = 'https://doc-ai-backend.vercel.app';
+const API_URL = 'https://lamont-audio-upload.vercel.app';
 
 // DOM Elements
 const dropZone = document.getElementById('dropZone');
