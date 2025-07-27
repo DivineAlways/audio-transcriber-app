@@ -167,8 +167,9 @@ async def transcribe_chunks(session_id: str, original_filename: str):
         if session_id in upload_sessions:
             del upload_sessions[session_id]
 
-# Tell pydub where to find ffmpeg
+# Tell pydub where to find ffmpeg and ffprobe
 AudioSegment.converter = "/tmp/ffmpeg/ffmpeg"
+AudioSegment.ffprobe = "/tmp/ffmpeg/ffprobe"
 
 def chunk_audio(input_path: str, chunk_duration_seconds: int = 50) -> list:
     """
