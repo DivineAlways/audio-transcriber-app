@@ -65,8 +65,10 @@ document.getElementById('transcribeBtn').addEventListener('click', async () => {
             
             if (data.transcript && data.transcript.trim()) {
                 transcriptionDiv.textContent = data.transcript;
+            } else if (data.status === 'no_speech_detected') {
+                transcriptionDiv.textContent = data.message || 'No speech detected in the audio file.';
             } else {
-                transcriptionDiv.textContent = 'Transcription completed but no text was detected. This could happen if:\n• The audio is too quiet or unclear\n• The file contains no speech\n• The audio format is not compatible\n\nTry with a clearer audio file or check that the file contains speech.';
+                transcriptionDiv.textContent = data.message || 'Transcription completed but no text was detected. This could happen if:\n• The audio is too quiet or unclear\n• The file contains no speech\n• The audio format is not compatible\n\nTry with a clearer audio file or check that the file contains speech.';
             }
         } else {
             console.error('Transcription failed:', transcribeResponse.status);
