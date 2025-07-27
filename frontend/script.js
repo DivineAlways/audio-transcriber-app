@@ -1,91 +1,208 @@
-document.getElementById('transcribeBtn').addEventListener('click', async () => {
-    const audioFile = document.getElementById('audioFile').files[0];
-    const transcriptionDiv = document.getElementById('transcription');
-    const transcribeBtn = document.getElementById('transcribeBtn');
-    const progressBar = document.getElementById('progressBar');
-    const progressContainer = document.getElementById('progressContainer');
+// Backend API URL
+const API_URL = 'https://doc-ai-backend.vercel.app';
 
-    if (!audioFile) {
-        transcriptionDiv.textContent = 'Please select a file.';
+// DOM Elements
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const transcribeBtn = document.getElementById('transcribeBtn');
+const progressContainer = document.getElementById('progressContainer');
+const progressBar = document.getElementById('progressBar');
+const statusText = document.getElementById('statusText');
+const result = document.getElementById('result');
+const transcriptText = document.getElementById('transcriptText');
+const copyBtn = document.getElementById('copyBtn');
+
+let selectedFile = null;
+
+// Event Listeners
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', handleDragOver);
+dropZone.addEventListener('drop', handleDrop);
+fileInput.addEventListener('change', handleFileSelect);
+transcribeBtn.addEventListener('click', handleTranscribe);
+copyBtn.addEventListener('click', handleCopy);
+
+// Drag and Drop Handlers
+function handleDragOver(e) {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFile(files[0]);
+    }
+}
+
+// File Selection Handler
+function handleFileSelect(e) {
+    const files = e.target.files;
+    if (files.length > 0) {
+        handleFile(files[0]);
+    }
+}
+
+// Handle File
+function handleFile(file) {
+    // Check file size (Assembly AI supports up to 512MB)
+    const maxSize = 512 * 1024 * 1024; // 512MB in bytes
+    
+    if (file.size > maxSize) {
+        showError('File is too large. Maximum file size is 512MB.');
         return;
     }
+    
+    selectedFile = file;
+    
+    // Update UI
+    dropZone.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 24px;">📄</span>
+            <div>
+                <div style="font-weight: bold;">${file.name}</div>
+                <div style="color: #666; font-size: 14px;">
+                    ${formatFileSize(file.size)} • Ready to transcribe
+                </div>
+            </div>
+        </div>
+    `;
+    
+    transcribeBtn.disabled = false;
+    transcribeBtn.textContent = 'Start Transcription';
+    
+    // Clear any previous results
+    result.style.display = 'none';
+    progressContainer.style.display = 'none';
+}
 
-    // --- Frontend Chunking Logic ---
-    const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB chunks
-    const totalChunks = Math.ceil(audioFile.size / CHUNK_SIZE);
-    const sessionId = new Date().getTime().toString() + Math.random().toString(36).substring(2);
-    const backendUrl = 'https://lamont-audio-upload.vercel.app';
+// Format File Size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
-    // --- UI Setup ---
-    transcribeBtn.disabled = true;
-    transcribeBtn.textContent = 'Uploading...';
-    progressContainer.style.display = 'block';
-    progressBar.style.width = '0%';
-    transcriptionDiv.textContent = `Starting upload of ${totalChunks} chunks...`;
-
-    try {
-        // 1. Upload all chunks
-        for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, audioFile.size);
-            const chunk = audioFile.slice(start, end);
-
-            const formData = new FormData();
-            formData.append('file', chunk, audioFile.name);
-            formData.append('session_id', sessionId);
-            formData.append('chunk_index', i);
-            formData.append('total_chunks', totalChunks);
-
-            const response = await fetch(`${backendUrl}/upload_chunk`, {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) {
-                throw new Error(`Chunk upload failed. Server responded with ${response.status}`);
-            }
-            
-            // Update progress bar
-            const progress = Math.round(((i + 1) / totalChunks) * 100);
-            progressBar.style.width = `${progress}%`;
-            transcriptionDiv.textContent = `Uploaded chunk ${i + 1} of ${totalChunks}...`;
-        }
-
-        // 2. Signal backend to assemble and transcribe
-        transcribeBtn.textContent = 'Transcribing...';
-        transcriptionDiv.textContent = 'File upload complete. Assembling and transcribing on the server...';
-        
-        const transcribeResponse = await fetch(`${backendUrl}/transcribe_chunks?session_id=${sessionId}&original_filename=${encodeURIComponent(audioFile.name)}`, {
-            method: 'POST',
-        });
-
-        if (transcribeResponse.ok) {
-            const data = await transcribeResponse.json();
-            console.log('Transcription response:', data);
-            
-            if (data.transcript && data.transcript.trim()) {
-                transcriptionDiv.textContent = data.transcript;
-            } else if (data.status === 'no_speech_detected') {
-                transcriptionDiv.textContent = data.message || 'No speech detected in the audio file.';
-            } else {
-                transcriptionDiv.textContent = data.message || 'Transcription completed but no text was detected. This could happen if:\n• The audio is too quiet or unclear\n• The file contains no speech\n• The audio format is not compatible\n\nTry with a clearer audio file or check that the file contains speech.';
-            }
-        } else {
-            console.error('Transcription failed:', transcribeResponse.status);
-            const errorData = await transcribeResponse.json();
-            console.error('Error data:', errorData);
-            throw new Error(errorData.error || 'Transcription failed.');
-        }
-
-    } catch (error) {
-        transcriptionDiv.textContent = `Error: ${error.message}`;
-    } finally {
-        // --- UI Cleanup ---
-        transcribeBtn.disabled = false;
-        transcribeBtn.textContent = 'Transcribe';
-        progressContainer.style.display = 'none';
-        progressBar.style.width = '0%';
+// Handle Transcription
+async function handleTranscribe() {
+    if (!selectedFile) {
+        showError('Please select a file first.');
+        return;
     }
+    
+    // Update UI
+    transcribeBtn.disabled = true;
+    transcribeBtn.textContent = 'Transcribing...';
+    progressContainer.style.display = 'block';
+    result.style.display = 'none';
+    
+    updateStatus('Uploading file to Assembly AI...');
+    updateProgress(0);
+    
+    try {
+        // Create FormData for the upload
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        
+        // Upload and transcribe with Assembly AI
+        const response = await fetch(`${API_URL}/transcribe`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+        
+        updateProgress(100);
+        updateStatus('Transcription complete!');
+        
+        const data = await response.json();
+        
+        if (data.transcript && data.transcript.trim()) {
+            displayResult(data.transcript);
+        } else {
+            // Handle no speech detected
+            const message = data.message || 'No speech detected in the audio file.';
+            showError(message);
+        }
+        
+    } catch (error) {
+        console.error('Transcription error:', error);
+        showError(`Transcription failed: ${error.message}`);
+    } finally {
+        // Reset UI
+        transcribeBtn.disabled = false;
+        transcribeBtn.textContent = 'Start Transcription';
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+        }, 2000);
+    }
+}
+
+// Update Progress
+function updateProgress(percent) {
+    progressBar.style.width = `${percent}%`;
+}
+
+// Update Status
+function updateStatus(message) {
+    statusText.textContent = message;
+}
+
+// Display Result
+function displayResult(transcript) {
+    transcriptText.textContent = transcript;
+    result.style.display = 'block';
+    
+    // Scroll to result
+    result.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Show Error
+function showError(message) {
+    updateStatus(`Error: ${message}`);
+    progressBar.style.backgroundColor = '#ef4444';
+    
+    // Reset progress bar color after 3 seconds
+    setTimeout(() => {
+        progressBar.style.backgroundColor = '#3b82f6';
+    }, 3000);
+}
+
+// Copy to Clipboard
+function handleCopy() {
+    const text = transcriptText.textContent;
+    if (text) {
+        navigator.clipboard.writeText(text).then(() => {
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => {
+                copyBtn.textContent = 'Copy to Clipboard';
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+            showError('Failed to copy text to clipboard');
+        });
+    }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Audio Transcriber App initialized');
+    console.log('API URL:', API_URL);
+    
+    // Remove dragover class when dragging leaves the drop zone
+    dropZone.addEventListener('dragleave', (e) => {
+        if (!dropZone.contains(e.relatedTarget)) {
+            dropZone.classList.remove('dragover');
+        }
+    });
 });
 
 
