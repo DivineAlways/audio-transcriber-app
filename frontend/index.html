@@ -9,7 +9,7 @@
 <body>
     <div class="container">
         <h1>Audio & Video Transcriber</h1>
-        <p>Upload an audio or video file to get a transcription using Assembly AI.</p>
+        <p>Upload an audio or video file to get a transcription using Assembly AI directly from your browser.</p>
         
         <!-- File Upload Area -->
         <div id="dropZone" class="drop-zone">
@@ -45,16 +45,17 @@
         <!-- Documentation -->
         <div class="documentation">
             <h2>How it works</h2>
-            <p>This application uses Assembly AI's powerful Speech-to-Text API to transcribe audio and video files. The backend is built with FastAPI and the frontend is built with HTML, CSS, and JavaScript.</p>
+            <p>This application uses Assembly AI's powerful Speech-to-Text API directly from your browser - no backend server needed! Files are uploaded directly to Assembly AI, transcribed, and the results are sent to your n8n webhook.</p>
             <p>Simply drag and drop your file or click to browse. Assembly AI automatically handles all audio and video formats, extracts audio from video files, and provides high-quality transcriptions with punctuation and formatting.</p>
             
             <h3>Key Features</h3>
             <ul>
-                <li><strong>Large File Support:</strong> Up to 512MB file size</li>
+                <li><strong>Large File Support:</strong> Up to 512MB file size (full Assembly AI capacity)</li>
+                <li><strong>No Server Needed:</strong> Direct browser-to-Assembly AI integration</li>
                 <li><strong>Auto Format Detection:</strong> No need to specify audio format</li>
                 <li><strong>Video Support:</strong> Automatically extracts audio from video files</li>
                 <li><strong>High Accuracy:</strong> Industry-leading transcription quality</li>
-                <li><strong>Fast Processing:</strong> Quick turnaround times</li>
+                <li><strong>Fast Processing:</strong> Direct API calls, no server bottlenecks</li>
             </ul>
             
             <h3>Supported Formats</h3>

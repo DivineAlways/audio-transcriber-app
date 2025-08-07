@@ -1,5 +1,6 @@
-// Backend API URL
-const API_URL = 'https://lamont-audio-upload.vercel.app';
+// Assembly AI Configuration - Direct Frontend Integration
+const ASSEMBLYAI_API_KEY = 'YOUR_ASSEMBLYAI_API_KEY_HERE'; // You'll need to replace this
+const N8N_WEBHOOK_URL = "https://n8n-service-3446.onrender.com/webhook/6da7c0ce-6f81-4fd7-a667-3784b4159bec";
 
 // DOM Elements
 const dropZone = document.getElementById('dropZone');
@@ -48,11 +49,11 @@ function handleFileSelect(e) {
 
 // Handle File
 function handleFile(file) {
-    // Check file size (Assembly AI supports up to 512MB)
+    // Assembly AI supports up to 512MB - no more Vercel limits!
     const maxSize = 512 * 1024 * 1024; // 512MB in bytes
     
     if (file.size > maxSize) {
-        showError('File is too large. Maximum file size is 512MB.');
+        showError(`File is too large. Maximum file size is ${formatFileSize(maxSize)}.`);
         return;
     }
     
@@ -88,10 +89,16 @@ function formatFileSize(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Handle Transcription
+// Handle Transcription - Direct Assembly AI REST API Integration
 async function handleTranscribe() {
     if (!selectedFile) {
         showError('Please select a file first.');
+        return;
+    }
+
+    // Check if API key is set
+    if (ASSEMBLYAI_API_KEY === 'Assembly_API_Key' || ASSEMBLYAI_API_KEY === 'YOUR_ASSEMBLYAI_API_KEY_HERE') {
+        showError('Please set your Assembly AI API key in the script.js file.');
         return;
     }
     
@@ -102,40 +109,179 @@ async function handleTranscribe() {
     result.style.display = 'none';
     
     updateStatus('Uploading file to Assembly AI...');
-    updateProgress(0);
+    updateProgress(10);
     
     try {
-        // Create FormData for the upload
+        // Step 1: Upload the file to Assembly AI
+        updateStatus('Uploading file...');
         const formData = new FormData();
-        formData.append('file', selectedFile);
+        formData.append('audio', selectedFile);
         
-        // Upload and transcribe with Assembly AI
-        const response = await fetch(`${API_URL}/transcribe`, {
+        const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
             method: 'POST',
+            headers: {
+                'Authorization': ASSEMBLYAI_API_KEY
+            },
             body: formData
         });
         
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        if (!uploadResponse.ok) {
+            throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
         }
         
-        updateProgress(100);
-        updateStatus('Transcription complete!');
+        const uploadData = await uploadResponse.json();
+        const audioUrl = uploadData.upload_url;
         
-        const data = await response.json();
+        updateProgress(30);
+        updateStatus('File uploaded. Starting transcription...');
         
-        if (data.transcript && data.transcript.trim()) {
-            displayResult(data.transcript);
+        // Step 2: Start transcription
+        const transcriptRequest = {
+            audio_url: audioUrl,
+            speaker_labels: true,
+            punctuate: true,
+            format_text: true,
+            language_detection: true
+        };
+        
+        const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+            method: 'POST',
+            headers: {
+                'Authorization': ASSEMBLYAI_API_KEY,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(transcriptRequest)
+        });
+        
+        if (!transcriptResponse.ok) {
+            throw new Error(`Transcription request failed: ${transcriptResponse.status} ${transcriptResponse.statusText}`);
+        }
+        
+        const transcriptData = await transcriptResponse.json();
+        const transcriptId = transcriptData.id;
+        
+        updateProgress(40);
+        updateStatus('Transcription in progress...');
+        
+        // Step 3: Poll for completion
+        let transcript;
+        let attempts = 0;
+        const maxAttempts = 60; // 5 minutes max
+        
+        while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+            
+            const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+                headers: {
+                    'Authorization': ASSEMBLYAI_API_KEY
+                }
+            });
+            
+            if (!statusResponse.ok) {
+                throw new Error(`Status check failed: ${statusResponse.status} ${statusResponse.statusText}`);
+            }
+            
+            transcript = await statusResponse.json();
+            
+            if (transcript.status === 'completed') {
+                break;
+            } else if (transcript.status === 'error') {
+                throw new Error(`Assembly AI transcription error: ${transcript.error}`);
+            }
+            
+            attempts++;
+            const progress = 40 + (attempts / maxAttempts) * 50; // Progress from 40% to 90%
+            updateProgress(Math.min(progress, 90));
+            updateStatus(`Transcription in progress... (${attempts * 5}s)`);
+        }
+        
+        if (attempts >= maxAttempts) {
+            throw new Error('Transcription timed out. Please try again with a shorter file.');
+        }
+        
+        updateProgress(95);
+        updateStatus('Processing results...');
+        
+        const transcriptText = transcript.text;
+        
+        if (transcriptText && transcriptText.trim()) {
+            updateStatus('Sending to n8n webhook...');
+            
+            // Send transcript to n8n webhook
+            try {
+                await fetch(N8N_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        transcript: transcriptText,
+                        originalFileName: selectedFile.name,
+                        confidence: transcript.confidence || null,
+                        language: transcript.language_code || 'auto-detected',
+                        source: 'frontend-direct',
+                        assemblyai_id: transcriptId
+                    })
+                });
+                console.log('Successfully sent to n8n webhook');
+            } catch (webhookError) {
+                console.error('Error sending to n8n:', webhookError);
+                // Don't throw error - still show transcript to user
+            }
+            
+            updateProgress(100);
+            updateStatus('Transcription complete!');
+            displayResult(transcriptText);
+            
         } else {
-            // Handle no speech detected
-            const message = data.message || 'No speech detected in the audio file.';
-            showError(message);
+            updateProgress(100);
+            updateStatus('No speech detected');
+            
+            // Send no speech result to webhook
+            try {
+                await fetch(N8N_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        transcript: "No speech detected",
+                        originalFileName: selectedFile.name,
+                        status: "no_speech",
+                        source: 'frontend-direct'
+                    })
+                });
+            } catch (webhookError) {
+                console.error('Error sending to n8n:', webhookError);
+            }
+            
+            showError('No speech detected in the audio file. This could happen if:\n• The file contains only music or background noise\n• The audio is too quiet\n• The file is corrupted\n• The language is not supported\n\nTry with a file containing clear speech.');
         }
         
     } catch (error) {
         console.error('Transcription error:', error);
+        updateProgress(100);
         showError(`Transcription failed: ${error.message}`);
+        
+        // Send error to webhook
+        try {
+            await fetch(N8N_WEBHOOK_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    transcript: "Error occurred during transcription",
+                    originalFileName: selectedFile.name,
+                    status: "error",
+                    error: error.message,
+                    source: 'frontend-direct'
+                })
+            });
+        } catch (webhookError) {
+            console.error('Error sending to n8n:', webhookError);
+        }
+        
     } finally {
         // Reset UI
         transcribeBtn.disabled = false;
@@ -194,8 +340,8 @@ function handleCopy() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Audio Transcriber App initialized');
-    console.log('API URL:', API_URL);
+    console.log('Audio Transcriber App initialized with Assembly AI direct integration');
+    console.log('N8N Webhook URL:', N8N_WEBHOOK_URL);
     
     // Remove dragover class when dragging leaves the drop zone
     dropZone.addEventListener('dragleave', (e) => {
