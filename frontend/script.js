@@ -13,9 +13,14 @@ const textInput = document.getElementById('textInput');
 const generateBtn = document.getElementById('generateBtn');
 const generationResult = document.getElementById('generationResult');
 const generatedFilesText = document.getElementById('generatedFilesText');
-const webhookUrlInput = document.getElementById('webhookUrlInput');
 
 let selectedFile = null;
+
+// --- Backend API Base URL ---
+const API_BASE_URL = 'https://audio-transcriber-n4c7j7vlxa-uc.a.run.app';
+
+// --- Hardcoded Webhook URL (for backend to trigger automation) ---
+const WEBHOOK_URL = 'https://audio-transcriber-n4c7j7vlxa-uc.a.run.app/'; // Your deployed backend URL
 
 // --- Event Listeners ---
 dropZone.addEventListener('click', () => fileInput.click());
@@ -90,11 +95,7 @@ async function handleTranscribe() {
     
     const formData = new FormData();
     formData.append('file', selectedFile);
-
-    const webhookUrl = webhookUrlInput.value.trim();
-    if (webhookUrl) {
-        formData.append('webhook_url', webhookUrl);
-    }
+    formData.append('webhook_url', WEBHOOK_URL);
 
     // Setup UI for processing
     transcribeBtn.disabled = true;
@@ -105,7 +106,7 @@ async function handleTranscribe() {
     updateProgress(10);
 
     try {
-        const response = await fetch('http://localhost:8000/transcribe', {
+        const response = await fetch(`${API_BASE_URL}/transcribe`, {
             method: 'POST',
             body: formData,
         });
@@ -119,10 +120,7 @@ async function handleTranscribe() {
 
         const data = await response.json();
 
-        if (data.message && data.message.includes('Webhook sent')) {
-            updateStatus('Success!');
-            displaySuccessMessage(data.message);
-        } else if (data.repo_url && data.pages_url) {
+        if (data.repo_url && data.pages_url) {
             updateStatus('Deployment Complete!');
             displaySuccessLinks(data.repo_url, data.pages_url);
         } else {
@@ -150,14 +148,10 @@ async function handleGenerateFromText() {
     generateBtn.textContent = 'Generating...';
     generationResult.style.display = 'none';
 
-    const webhookUrl = webhookUrlInput.value.trim();
-    const body = { transcript: transcript };
-    if (webhookUrl) {
-        body.webhook_url = webhookUrl;
-    }
+    const body = { transcript: transcript, webhook_url: WEBHOOK_URL };
 
     try {
-        const response = await fetch('http://localhost:8000/generate-from-text', {
+        const response = await fetch(`${API_BASE_URL}/generate-from-text`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -172,10 +166,7 @@ async function handleGenerateFromText() {
 
         const data = await response.json();
 
-        if (data.message && data.message.includes('Webhook sent')) {
-            generationResult.style.display = 'block';
-            generatedFilesText.innerHTML = `<p><strong>Success!</strong> ${data.message}</p>`;
-        } else if (data.repo_url && data.pages_url) {
+        if (data.repo_url && data.pages_url) {
             generationResult.style.display = 'block';
             generatedFilesText.innerHTML = `
                 <p><strong>Project created and deployed!</strong></p>
@@ -238,7 +229,7 @@ function handleCopy() {
         navigator.clipboard.writeText(text).then(() => {
             copyBtn.textContent = 'Copied!';
             setTimeout(() => {
-                copyBtn.textContent = 'Copy to Clipboard';
+                copyBtn.textContent = 'Copy Links';
             }, 2000);
         }).catch(err => {
             console.error('Failed to copy text: ', err);
