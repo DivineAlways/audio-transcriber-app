@@ -8,7 +8,6 @@ A standalone web application that uses Assembly AI for audio and video transcrip
 - **Large File Support**: Up to 512MB file uploads
 - **Real-time Progress**: Live progress updates during transcription
 - **Multiple Formats**: Supports all major audio and video formats
-- **n8n Integration**: Automatically sends results to webhook
 - **Copy to Clipboard**: Easy transcript copying
 
 ## Setup
