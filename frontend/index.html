@@ -9,14 +9,16 @@
 <body>
     <div class="container">
         <h1>Audio Transcriber & Project Generator</h1>
-        
+        <p class="app-description">This application allows you to generate full project assets (documentation, wireframes, and an interactive prototype) and deploy them directly to GitHub Pages. You can trigger the generation process by either uploading an audio/video file for transcription or by providing a text description.</p>
+        <p class="app-description">After a successful generation and deployment, you will receive direct links to your new GitHub repository and the live GitHub Pages site.</p>
+
         <div class="tabs">
             <button class="tab-link active" data-tab="transcribe">Transcribe Audio & Deploy</button>
             <button class="tab-link" data-tab="generate">Generate from Text & Deploy</button>
         </div>
 
         <div id="transcribe" class="tab-content" style="display: block;">
-            <p>Upload an audio or video file. It will be transcribed and the resulting project will be deployed to GitHub Pages.</p>
+            <p>Upload an audio or video file here. The audio will be transcribed, and the resulting text will be used to generate your project assets. Your project will then be automatically deployed to a new GitHub repository with GitHub Pages enabled.</p>
             
             <div id="dropZone" class="drop-zone">
                 <div>
@@ -47,7 +49,7 @@
 
         <div id="generate" class="tab-content">
             <h3>Generate Project from Text</h3>
-            <p>Describe the project you want to build. It will be generated and deployed to GitHub Pages.</p>
+            <p>Describe the project you want to build in detail. Your description will be used to generate all project assets, which will then be automatically deployed to a new GitHub repository with GitHub Pages enabled.</p>
             <textarea id="textInput" placeholder="e.g., I need a simple website for my new coffee shop..."></textarea>
             <button id="generateBtn">Generate & Deploy</button>
             <div id="generationResult" style="display: none;">
