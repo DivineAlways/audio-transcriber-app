@@ -1,6 +1,6 @@
 // Assembly AI Configuration - Direct Frontend Integration
-const ASSEMBLYAI_API_KEY = 'YOUR_ASSEMBLYAI_API_KEY_HERE'; // You'll need to replace this
-const N8N_WEBHOOK_URL = "https://n8n-service-3446.onrender.com/webhook/6da7c0ce-6f81-4fd7-a667-3784b4159bec";
+const ASSEMBLYAI_API_KEY = '9563dac8b85846029bd3921edf0d8509'; // You'll need to replace this
+const N8N_WEBHOOK_URL = "https://innergcomplete.app.n8n.cloud/webhook/c0b2e4e8-c7b1-41c1-8e6e-db02f612b80d";
 
 // DOM Elements
 const dropZone = document.getElementById('dropZone');
