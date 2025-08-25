@@ -27,9 +27,9 @@ app = FastAPI()
 # --- CORS Configuration ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://audio-transcriber-app-frontend.vercel.app"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -161,24 +161,12 @@ def generate_and_deploy_project(transcript):
 
 # --- API Endpoints ---
 @app.post("/transcribe")
-async def transcribe_audio(file: UploadFile = File(...), webhook_url: str = Form(None)):
-    """Transcribes audio, then generates and deploys a project, optionally calling a webhook."""
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribes audio, then generates and deploys a project."""
     temp_path = None
     try:
-        # Read file content into memory for webhook and local processing
+        # Read file content into memory for processing
         content = await file.read()
-        
-        # --- Webhook Trigger (Audio) ---
-        if webhook_url:
-            print(f"--- Sending audio to webhook: {webhook_url} ---")
-            try:
-                # Re-create UploadFile for webhook if needed, or just send raw content
-                # For simplicity, sending as multipart form data, similar to how FastAPI receives it
-                files = {'file': (file.filename, content, file.content_type)}
-                requests.post(webhook_url, files=files, timeout=30) # Increased timeout for file uploads
-                print("--- Audio sent to webhook successfully. ---")
-            except Exception as e:
-                print(f"--- Failed to send audio to webhook: {e} ---")
 
         # Save to temporary file for AssemblyAI processing
         file_extension = os.path.splitext(file.filename)[1]
@@ -208,22 +196,11 @@ async def transcribe_audio(file: UploadFile = File(...), webhook_url: str = Form
 
 @app.post("/generate-from-text")
 async def generate_project(payload: dict = Body(...)):
-    """Generates and deploys a project from text, optionally calling a webhook."""
+    """Generates and deploys a project from text."""
     try:
         transcript = payload.get("transcript")
-        webhook_url = payload.get("webhook_url")
-
         if not transcript:
             return JSONResponse(content={"error": "Transcript is required"}, status_code=400)
-
-        # --- Webhook Trigger (Text) ---
-        if webhook_url:
-            print(f"--- Sending text to webhook: {webhook_url} ---")
-            try:
-                requests.post(webhook_url, json={'transcript': transcript}, timeout=10)
-                print("--- Text sent to webhook successfully. ---")
-            except Exception as e:
-                print(f"--- Failed to send text to webhook: {e} ---")
 
         result = await run_in_threadpool(generate_and_deploy_project, transcript)
         return JSONResponse(content=result)

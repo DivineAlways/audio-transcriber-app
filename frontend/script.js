@@ -17,10 +17,7 @@ const generatedFilesText = document.getElementById('generatedFilesText');
 let selectedFile = null;
 
 // --- Backend API Base URL ---
-const API_BASE_URL = 'https://audio-transcriber-n4c7j7vlxa-uc.a.run.app';
-
-// --- Hardcoded Webhook URL (for backend to trigger automation) ---
-const WEBHOOK_URL = 'https://audio-transcriber-n4c7j7vlxa-uc.a.run.app/'; // Your deployed backend URL
+const API_BASE_URL = 'https://audio-transcriber-596584619630.us-central1.run.app';
 
 // --- Event Listeners ---
 dropZone.addEventListener('click', () => fileInput.click());
@@ -92,10 +89,8 @@ async function handleTranscribe() {
         showError('Please select a file first.');
         return;
     }
-    
     const formData = new FormData();
     formData.append('file', selectedFile);
-    formData.append('webhook_url', WEBHOOK_URL);
 
     // Setup UI for processing
     transcribeBtn.disabled = true;
@@ -148,7 +143,7 @@ async function handleGenerateFromText() {
     generateBtn.textContent = 'Generating...';
     generationResult.style.display = 'none';
 
-    const body = { transcript: transcript, webhook_url: WEBHOOK_URL };
+    const body = { transcript: transcript };
 
     try {
         const response = await fetch(`${API_BASE_URL}/generate-from-text`, {
@@ -260,3 +255,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+
+
