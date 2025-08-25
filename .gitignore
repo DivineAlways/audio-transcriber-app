@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.Python
+
+# Env files
+.env
+backend/.env
+
+# IDEs
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.Trashes
+Thumbs.db
+
+# Node.js
+node_modules/
+pm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Temporary files
+thinking.md
+backend/test.md
